@@ -54,7 +54,6 @@ func executeQuery(query *influxql.Query, options influxql.ExecutionOptions) <-ch
 		}
 
 		stmt, ok := query.Statements[0].(*influxql.SelectStatement)
-		log.Printf("main select statement: %v", stmt)
 		if !ok {
 			results <- &influxql.Result{Err: fmt.Errorf("not a select stmt.")}
 			return
@@ -65,6 +64,16 @@ func executeQuery(query *influxql.Query, options influxql.ExecutionOptions) <-ch
 			results <- &influxql.Result{Err: fmt.Errorf("new iterator creator: %v", err)}
 			return
 		}
+
+		tmp, err := stmt.RewriteFields(ic)
+		if err != nil {
+			results <- &influxql.Result{Err: fmt.Errorf("statement rewrite fields: %v", err)}
+			return
+		}
+		stmt = tmp
+
+		log.Printf("main select statement: %v", stmt)
+
 		itrs, err := influxql.Select(stmt, ic, nil)
 		if err != nil {
 			results <- &influxql.Result{Err: fmt.Errorf("select: %v", err)}
