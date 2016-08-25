@@ -22,6 +22,8 @@ func (s *HttpServer) Start() error {
 	router.GET("/query", queryHandler)
 	router.POST("/ping", pingHandler)
 	router.GET("/ping", pingHandler)
+	router.POST("/write", writeHandler)
+	router.GET("/write", writeHandler)
 	addr := "0.0.0.0:10086"
 	return http.ListenAndServe(addr, router)
 }
