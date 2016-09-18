@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"encoding/json"
@@ -11,10 +11,10 @@ import (
 	"github.com/influxdata/influxdb/influxql"
 )
 
-func NewIteratorCreator(clients []client.Client) (influxql.IteratorCreator, error) {
+func NewIteratorCreator(clients []client.Client, database string) (influxql.IteratorCreator, error) {
 	ics := make([]influxql.IteratorCreator, 0)
-	for _, client := range clients {
-		ic := &RemoteIteratorCreator{client: client}
+	for _, c := range clients {
+		ic := &RemoteIteratorCreator{client: c, database: database}
 		ics = append(ics, ic)
 	}
 	return influxql.IteratorCreators(ics), nil
@@ -24,13 +24,14 @@ type RemoteIteratorCreator struct {
 	client        client.Client
 	fieldsMap     map[string]map[string]influxql.DataType
 	dimensionsMap map[string]map[string]struct{}
+	database      string
 }
 
 func (ic *RemoteIteratorCreator) FieldDimensions(sources influxql.Sources) (map[string]influxql.DataType, map[string]struct{}, error) {
 	if len(ic.fieldsMap) == 0 {
 		q := client.Query{
 			Command:  "show field keys",
-			Database: "esm",
+			Database: ic.database,
 		}
 		resp, err := ic.client.Query(q)
 		if err != nil {
@@ -60,7 +61,7 @@ func (ic *RemoteIteratorCreator) FieldDimensions(sources influxql.Sources) (map[
 	if len(ic.dimensionsMap) == 0 {
 		q := client.Query{
 			Command:  "show tag keys",
-			Database: "esm",
+			Database: ic.database,
 		}
 		resp, err := ic.client.Query(q)
 		if err != nil {
@@ -161,7 +162,7 @@ func (ic *RemoteIteratorCreator) CreateVarRefIterator(options influxql.IteratorO
 
 	q := client.Query{
 		Command:   stmt.String(),
-		Database:  "esm",
+		Database:  ic.database,
 		Precision: "s",
 	}
 	resp, err := ic.client.Query(q)

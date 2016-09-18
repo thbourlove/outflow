@@ -1,4 +1,4 @@
-package main
+package httpd
 
 import (
 	"encoding/json"
@@ -6,26 +6,32 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/influxdata/influxdb/influxql"
 	"github.com/julienschmidt/httprouter"
+	"github.com/thbourlove/outflow/client"
 )
 
 type HttpServer struct {
+	config Config
+	router *httprouter.Router
 }
 
-func NewHttpServer() (*HttpServer, error) {
-	return &HttpServer{}, nil
+func NewHttpServer(c *client.Client, config Config) (*HttpServer, error) {
+	handler := NewHandler(c)
+
+	router := httprouter.New()
+	router.POST("/query", handler.query)
+	router.GET("/query", handler.query)
+	router.POST("/ping", handler.ping)
+	router.GET("/ping", handler.ping)
+	router.POST("/write", handler.write)
+	router.GET("/write", handler.write)
+
+	return &HttpServer{router: router, config: config}, nil
 }
 
 func (s *HttpServer) Start() error {
-	router := httprouter.New()
-	router.POST("/query", queryHandler)
-	router.GET("/query", queryHandler)
-	router.POST("/ping", pingHandler)
-	router.GET("/ping", pingHandler)
-	router.POST("/write", writeHandler)
-	router.GET("/write", writeHandler)
-	addr := "0.0.0.0:10086"
-	return http.ListenAndServe(addr, router)
+	return http.ListenAndServe(s.config.Addr, s.router)
 }
 
 func (s *HttpServer) Stop() error {
@@ -34,7 +40,21 @@ func (s *HttpServer) Stop() error {
 
 type Error struct {
 	code int
-	Msg  string
+	Err  string
+}
+
+func (r Error) MarshalJSON() ([]byte, error) {
+	var o struct {
+		Results []*influxql.Result `json:"results,omitempty"`
+		Err     string             `json:"error,omitempty"`
+	}
+
+	o.Results = append(o.Results, &influxql.Result{})
+	if r.Err != "" {
+		o.Err = r.Err
+	}
+
+	return json.Marshal(&o)
 }
 
 var (

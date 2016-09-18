@@ -1,0 +1,5 @@
+[upstreams]
+addrs = ["http://localhost:8086", "http://localhost:9086"]
+
+[httpd]
+addr = "0.0.0.0:10086"
