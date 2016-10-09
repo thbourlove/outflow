@@ -11,68 +11,38 @@ import (
 
 	"github.com/influxdata/influxdb/influxql"
 	"github.com/influxdata/influxdb/models"
-	influxHttpd "github.com/influxdata/influxdb/services/httpd"
 	"github.com/julienschmidt/httprouter"
 	"github.com/thbourlove/outflow/client"
 )
 
+//Define a Handler which contains an instance of client which is defined in client package
 type Handler struct {
 	client *client.Client
 }
 
+//return a new handler which contains a client just passed into
 func NewHandler(c *client.Client) *Handler {
 	return &Handler{client: c}
 }
 
-func convertToEpoch(r *influxql.Result, epoch string) {
-	divisor := int64(1)
-
-	switch epoch {
-	case "u":
-		divisor = int64(time.Microsecond)
-	case "ms":
-		divisor = int64(time.Millisecond)
-	case "s":
-		divisor = int64(time.Second)
-	case "m":
-		divisor = int64(time.Minute)
-	case "h":
-		divisor = int64(time.Hour)
-	}
-
-	for _, s := range r.Series {
-		for _, v := range s.Values {
-			if ts, ok := v[0].(time.Time); ok {
-				v[0] = ts.UnixNano() / divisor
-			}
-		}
-	}
-}
-
-func (h *Handler) query(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+//query parse an incoming query and, if valid, execute the query
+//In this function, it check the existence of database. If such database is not presented, then this query is invalid.
+func (h *Handler) query(rw http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	nodeID, _ := strconv.ParseUint(r.FormValue("node_id"), 10, 64)
 
 	qp := strings.TrimSpace(r.FormValue("q"))
 	if qp == "" {
-		responseError(w, Error{http.StatusBadRequest, `messing required parameter "q"`})
+		responseError(rw, Error{http.StatusBadRequest, `missing required parameter "q"`})
 		return
 	}
-	epoch := strings.TrimSpace(r.FormValue("epoch"))
-	p := influxql.NewParser(strings.NewReader(qp))
 	db := r.FormValue("db")
 	if db == "" {
-		responseError(w, Error{http.StatusBadRequest, "database name required"})
+		responseError(rw, Error{http.StatusBadRequest, `missing required parameter "db"`})
 		return
 	}
 
-	query, err := p.ParseQuery()
-	if err != nil {
-		responseError(w, Error{http.StatusBadRequest, "error parsing query: " + err.Error()})
-		return
-	}
-
-	w.Header().Add("Connection", "close")
-	w.Header().Add("Content-Type", "application/json")
+	rw.Header().Add("Connection", "close")
+	rw.Header().Add("Content-Type", "application/json")
 
 	options := influxql.ExecutionOptions{
 		Database: db,
@@ -80,63 +50,23 @@ func (h *Handler) query(w http.ResponseWriter, r *http.Request, _ httprouter.Par
 		NodeID:   nodeID,
 	}
 
-	results := h.client.Query(query, options)
+	//Query via influxDB's client
+	resp, _:= h.client.Query(options, qp)
 
-	resp := influxHttpd.Response{Results: make([]*influxql.Result, 0)}
-
-	w.WriteHeader(http.StatusOK)
-
-	for r := range results {
-		if r == nil {
-			continue
-		}
-
-		if epoch != "" {
-			convertToEpoch(r, epoch)
-		}
-
-		l := len(resp.Results)
-		if l == 0 {
-			resp.Results = append(resp.Results, r)
-		} else if resp.Results[l-1].StatementID == r.StatementID {
-			if r.Err != nil {
-				resp.Results[l-1] = r
-				continue
-			}
-
-			cr := resp.Results[l-1]
-			rowsMerged := 0
-			if len(cr.Series) > 0 {
-				lastSeries := cr.Series[len(cr.Series)-1]
-
-				for _, row := range r.Series {
-					if !lastSeries.SameSeries(row) {
-						break
-					}
-					lastSeries.Values = append(lastSeries.Values, row.Values...)
-					rowsMerged++
-				}
-			}
-
-			r.Series = r.Series[rowsMerged:]
-			cr.Series = append(cr.Series, r.Series...)
-			cr.Messages = append(cr.Messages, r.Messages...)
-		} else {
-			resp.Results = append(resp.Results, r)
-		}
-	}
+	rw.WriteHeader(http.StatusOK)
 
 	b, _ := json.MarshalIndent(resp, "", "   ")
-	w.Write(b)
+	rw.Write(b)
 }
 
-func (h *Handler) write(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+//write parse an incoming write request and, if valid, write such request into database
+func (h *Handler) write(rw http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	database := r.URL.Query().Get("db")
 	body := r.Body
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		b, err := gzip.NewReader(r.Body)
 		if err != nil {
-			responseError(w, Error{http.StatusBadRequest, "failed to read body as gzip format"})
+			responseError(rw, Error{http.StatusBadRequest, "failed to read body as gzip format"})
 			return
 		}
 		defer b.Close()
@@ -153,7 +83,7 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request, _ httprouter.Par
 
 	_, err := buf.ReadFrom(body)
 	if err != nil {
-		responseError(w, Error{http.StatusBadRequest, "uanble to read bytes from request body"})
+		responseError(rw, Error{http.StatusBadRequest, "uanble to read bytes from request body"})
 		return
 	}
 
@@ -161,7 +91,7 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request, _ httprouter.Par
 	if level != "" {
 		_, err := models.ParseConsistencyLevel(level)
 		if err != nil {
-			responseError(w, Error{http.StatusBadRequest, "failed to parse consistency level"})
+			responseError(rw, Error{http.StatusBadRequest, "failed to parse consistency level"})
 			return
 		}
 	}
@@ -171,18 +101,21 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request, _ httprouter.Par
 	points, parseError := models.ParsePointsWithPrecision(buf.Bytes(), time.Now().UTC(), precision)
 	if parseError != nil && len(points) == 0 {
 		if parseError.Error() == "EOF" {
-			responseJson(w, http.StatusOK, nil)
+			responseJson(rw, http.StatusOK, nil)
 			return
 		}
-		responseError(w, Error{http.StatusBadRequest, "unable to parse points"})
+		responseError(rw, Error{http.StatusBadRequest, "unable to parse points"})
 		return
 	}
 
-	h.client.Write(database, level, precision, points)
+	if err := h.client.Write(database, level, precision, points); err != nil {
+		responseError(rw, Error{http.StatusBadRequest, err.Error()})
+	}
 
-	responseJson(w, http.StatusNoContent, nil)
+	responseJson(rw, http.StatusNoContent, nil)
 }
 
+//ping is just used to check server is alive or not
 func (h *Handler) ping(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.WriteHeader(http.StatusNoContent)
 }
