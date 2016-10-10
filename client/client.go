@@ -2,20 +2,19 @@ package client
 
 import (
 	"fmt"
-	"sync"
-	"strings"
 
-	client "github.com/influxdata/influxdb/client/v2"
 	log "github.com/Sirupsen/logrus"
+	client "github.com/influxdata/influxdb/client/v2"
 	"github.com/influxdata/influxdb/influxql"
 	"github.com/influxdata/influxdb/models"
 	"github.com/serialx/hashring"
 )
-//Client provides implementation to interface Client which is defined in client
-type Client struct {
-	config Config     //represents configuration file
 
-	upstreams   []client.Client //represents an array of client that can write/query the database
+//Client provides implementation to interface Client which is defined influxdb/client/v2
+type Client struct {
+	config Config //represents configuration file
+
+	upstreams   []client.Client          //represents an array of client that can write/query the database
 	upstreamMap map[string]client.Client //represents a mapping relationship between database name and actual client
 
 	ring interface {
@@ -46,30 +45,16 @@ func New(config Config) (*Client, error) {
 	return c, nil
 }
 
-//TODO: need revise Query function in order to support all query functionality. For now, it only support select statement
 //TODO: need think about how to redirect the incoming request to correct influxDB's node url
 func (c *Client) Query(options influxql.ExecutionOptions, command string) (*client.Response, error) {
-	if !strings.Contains(command, "FROM") {
-		return nil, fmt.Errorf("Illegal statement %s; measurement name required", command)
-	}
-
-	strs := strings.Split(command, " ")
-	index := -1
-	for i := 0; i < len(strs); i++ {
-		index = i
-		if ok := strings.Compare(strs[i], "FROM"); ok == 0 {
-			break
-		}
-	}
-
-	measurement := strs[index + 1]
-	node, ok:= c.ring.GetNode(options.Database+measurement)
+	//retrieve actual destination from ring
+	node, ok := c.ring.GetNode(options.Database)
 	if !ok {
-		return nil, fmt.Errorf("Such server node %s has not been added yet, please try it laster", node)
+		return nil, fmt.Errorf("Such server node %s has not been added yet, please try again later", node)
 	}
 	//retrieve influxDB's client from map
 	nodeC := c.upstreamMap[node]
-	query := client.Query{Database:options.Database, Command:command}
+	query := client.Query{Database: options.Database, Command: command}
 
 	//check such sever is alive or not. If alive, then continue to perform query.
 	_, _, err := nodeC.Ping(0)

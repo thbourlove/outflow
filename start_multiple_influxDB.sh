@@ -9,5 +9,5 @@ fi
 
 #TODO For now, adding new configuration is done by human. Future work should make it automatically read
 #contents in config directory.
-influxd -config $CONFIG_DIR/influx_1.conf&
-influxd -config $CONFIG_DIR/influx_2.conf&
+nohup influxd -config $CONFIG_DIR/influx_1.conf&
+nohup influxd -config $CONFIG_DIR/influx_2.conf&
