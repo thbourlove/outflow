@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"log"
-
+	"fmt"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"log"
 
 	"github.com/thbourlove/outflow/client"
 	"github.com/thbourlove/outflow/httpd"
@@ -35,7 +35,6 @@ func initLog() {
 
 func main() {
 	initLog()
-
 	config, err := ParseConfig(configPath)
 	if err != nil {
 		log.Fatalf("pares config: %v", err)
@@ -51,5 +50,6 @@ func main() {
 		log.Fatalf("new http server: %v", err)
 	}
 
+	fmt.Println("start web server", config.Httpd)
 	log.Fatal(server.Start())
 }

@@ -20,13 +20,18 @@ func NewIteratorCreator(clients []client.Client, database string) (influxql.Iter
 	return influxql.IteratorCreators(ics), nil
 }
 
+//RemoteIteratorCreator is to provide implementation for
+//IteratorCreator which is defined in influxql/iterator.go
 type RemoteIteratorCreator struct {
-	client        client.Client
-	fieldsMap     map[string]map[string]influxql.DataType
-	dimensionsMap map[string]map[string]struct{}
+	client        client.Client                           //influxDB's client
+	fieldsMap     map[string]map[string]influxql.DataType //key is row's name, value is files which is a map[fieldKey][field.DataType].
+	dimensionsMap map[string]map[string]struct{}          // key is row's name, value is a map[tagKey][struct]
 	database      string
 }
 
+//FieldDimensions extracts all fields key info and tags key info into filesMap
+//and dimensionsMap which are defined in RemoteIteratorCreator
+//Returns the unique fields and dimensions across a list of sources.
 func (ic *RemoteIteratorCreator) FieldDimensions(sources influxql.Sources) (map[string]influxql.DataType, map[string]struct{}, error) {
 	if len(ic.fieldsMap) == 0 {
 		q := client.Query{
@@ -37,27 +42,34 @@ func (ic *RemoteIteratorCreator) FieldDimensions(sources influxql.Sources) (map[
 		if err != nil {
 			return nil, nil, fmt.Errorf("query %v: %v", q, err)
 		}
+
+		//retrieve fields info from database and convert it a map
 		ic.fieldsMap = make(map[string]map[string]influxql.DataType, len(resp.Results[0].Series))
 		for _, row := range resp.Results[0].Series {
 			fields := map[string]influxql.DataType{}
 			for _, value := range row.Values {
 				fieldKey := value[0].(string)
-				fieldType := value[1].(string)
-				switch fieldType {
-				case "float":
-					fields[fieldKey] = influxql.Float
-				case "integer":
-					fields[fieldKey] = influxql.Integer
-				case "string":
-					fields[fieldKey] = influxql.String
-				case "bool":
-					fields[fieldKey] = influxql.Boolean
+				if len(value) == 2 {
+					fieldType := value[1].(string)
+					switch fieldType {
+					case "float":
+						fields[fieldKey] = influxql.Float
+					case "integer":
+						fields[fieldKey] = influxql.Integer
+					case "string":
+						fields[fieldKey] = influxql.String
+					case "bool":
+						fields[fieldKey] = influxql.Boolean
+					}
+				} else {
+					fields[fieldKey] = influxql.Unknown
 				}
 			}
 			ic.fieldsMap[row.Name] = fields
 		}
 	}
 
+	//retrieve tags info from database and convert it to a map
 	if len(ic.dimensionsMap) == 0 {
 		q := client.Query{
 			Command:  "show tag keys",
@@ -95,10 +107,12 @@ func (ic *RemoteIteratorCreator) FieldDimensions(sources influxql.Sources) (map[
 	return fields, dimensions, nil
 }
 
+// ExpandSources expands sources across all iterator creators and returns a unique result.
 func (ic *RemoteIteratorCreator) ExpandSources(sources influxql.Sources) (influxql.Sources, error) {
 	return nil, nil
 }
 
+// Creates a simple iterator for use in an InfluxQL query.
 func (ic *RemoteIteratorCreator) CreateIterator(opt influxql.IteratorOptions) (influxql.Iterator, error) {
 	if call, ok := opt.Expr.(*influxql.Call); ok {
 		refOpt := opt
