@@ -39,7 +39,7 @@ should be able to allow user enable replication in case of any node crashed.
 Additionally, the software should have some kind of disaster recovery processes 
 to prevent any delegation of overall performance.
 
-1. Complete Query support
-2. Repliaton 
-3. Disaster recovery process
-4. test code
+- [ ] Complete Query support
+- [ ] Repliaton 
+- [ ] Disaster recovery process
+- [ ] test code
