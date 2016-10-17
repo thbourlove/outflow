@@ -9,7 +9,7 @@ as the project name will be created at `$GOPATH/bin`
 It is a simple proxy for influxDB. All it does is just forward incoming request to correct destination. Its successfully
 running need assume all node are alive. Any of it can not be crashed. This is pretty strict but it works for now.
 
-## How to create mutiple influxDB instance
+## How to create multiple influxDB instance
 When you check the source code, you will find a bash scrip file called `start_mutliple_influxDB.sh`. You can execute it to create multiple
 influxDB instance. By default, you will be able to create two influxDB server. You can add more for development purpose. Adding a new influxDB will
 requires you add configuration file manually. All configuration files resides at `config` directory. For now, adding a new configuration file will 
@@ -39,7 +39,7 @@ should be able to allow user enable replication in case of any node crashed.
 Additionally, the software should have some kind of disaster recovery processes 
 to prevent any delegation of overall performance.
 
-1. Complete Query support
-2. Repliaton 
-3. Disaster recovery process
-4. test code
+- [ ] Complete Query support
+- [ ] Repliaton 
+- [ ] Disaster recovery process
+- [ ] test code
